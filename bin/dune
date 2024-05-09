@@ -1,0 +1,4 @@
+(executable
+ (public_name ocurl)
+ (name main)
+ (libraries ocurl))
