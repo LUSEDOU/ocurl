@@ -6,7 +6,7 @@ is make a pipeline for testing REST APIs.
 
 ## Goals
 
-1. <<url>>
+1. <\<url\>>
 
 ```console
 ocurl <<url>>
@@ -22,7 +22,7 @@ cat <<urls>> | ocurl
 ```
 
 This is the same as the previous command, but it will read the urls from the
-standard input. It's the same as `cat urls | xargs curl`
+standard input. It's the same as `cat urls | xargs -I{} curl {}`
 
 2. .http
 
@@ -36,9 +36,11 @@ separated by a blank line.
 The common assigne operators are '\s' ':' and '='
 
 ```http
-GET /api (HTTP/1.1 @optional)
+GET /api HTTP/1.1
 Host: localhost:8080
 ```
+
+* HTTP/1.1 is optional, if not provided, it will use the default HTTP version
 
 And should be called like this:
 
@@ -160,7 +162,7 @@ Authorization: Bearer token
 4. Add expected response (status, headers, body) See [response](#response)
 
 ### Note
-$$ to escape the variable
+\$\$ to escape the variable
 
 
 4. With
