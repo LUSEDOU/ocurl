@@ -128,8 +128,9 @@ Accept: application/json
 - Headers: `HeaderName: value` (any casing allowed, PascalCase preferred)
 - Variables: `@VariableName = value`
 - Section ends at first empty line (double newline)
-- Variables can reference other variables: `@FullUrl = {{BaseUrl}}/api`
-- Headers cannot be used as variables
+- Variables can reference other variables: `@FullUrl = {{BaseUrl}}/api` and are
+  computed lazily at request time
+- Headers cannot be used as variables, but variables can be used in headers
 - Only `Host` is special-cased for URL construction
 
 ### Section 3: Environment Blocks
@@ -193,7 +194,7 @@ Custom-Header: literal value
 #### Method and URL
 
 ```http
-# Relative path (requires Host header or variable)
+# Relative path (requires Host header)
 GET /api/v2/users
 
 # Absolute URL (ignores Host)
@@ -227,6 +228,7 @@ GET /api/search
 - Complex values: `&coords=1;2;3;4` (semicolons preserved as-is)
 
 **Optional vs Required Parameters**:
+
 OCurl does not distinguish between optional and required query parameters at parse time. If a variable is missing and has no default, the request fails with a dependency error. Use `default:` pipe to make parameters truly optional.
 
 #### Headers
@@ -570,10 +572,11 @@ ocurl-list api.http --json             # Output as JSON instead
   (Host "api.example.com")
   (ApiVersion "v2")
   (bookId "13")
-  (jwt
-    (ref "login")
-    (expr "{{ login.response.body | jq '.token' }}")
+  (BaseUrl
+    (dependencies (Host))
+    (expr "{{ Host }}/api")
   )
+  (jwt (ref "login"))
 )
 
 (environment
@@ -600,14 +603,23 @@ ocurl-list api.http --json             # Output as JSON instead
   (method "POST")
   (path "/auth/login")
   (query-params
-    (remember "{{ remember | default:false }}")
+    (remember "{{ remember }}")
   )
   (headers
     (Content-Type "application/json")
   )
   (body "{\"username\":\"{{user}}\",\"password\":\"{{pass}}\"}")
-  (dependencies (Host user pass))
-  (produces (jwt user_id))
+  (dependencies (Host user pass remember))
+  (produces
+    (jwt "{{ login.response.body | jq '.token' }}")
+    (user_id
+      (ref "login")
+      (expr "{{ login.response.body | jq '.user.id' }}")
+    )
+  )
+  (variables
+    (remember false)
+  )
 )
 
 (request
@@ -615,13 +627,29 @@ ocurl-list api.http --json             # Output as JSON instead
   (method "GET")
   (path "/api/{{ApiVersion}}/books/{{bookId}}")
   (query-params
-    (include "reviews")
+    (reviews "true")
+    (search "{{ search }}")
   )
   (headers
     (Authorization "Bearer {{jwt}}")
   )
+  (dependencies (Host ApiVersion bookId jwt search))
+  (variables
+    (search "")
+  )
+)
+
+(request
+  (name "updateBook")
+  (method "PUT")
+  (path "/api/{{ApiVersion}}/books/{{bookId}}")
+  (headers
+    (Authorization "Bearer {{ jwt }}")
+  )
+  (body
+    (path "./update_book_payload.json")
+  )
   (dependencies (Host ApiVersion bookId jwt))
-  (depends-on (login))
 )
 ```
 
@@ -629,7 +657,10 @@ ocurl-list api.http --json             # Output as JSON instead
 
 - **`variables`**: Global and lazy variables
   - Simple: `(name "value")`
-  - Lazy: `(name (ref "request_name") (expr "{{ ... }}"))`
+    * Uses `"` when the value is a literal string. If only supports string, int,
+      bool and double types.
+  - Lazy: `(name (ref "request_name"))`
+    * `ref`: Source request name. Not evaulated here, could not exist yet.
 
 - **`environment`**: Environment-specific overrides
   - `variables`: Variables defined in this environment
@@ -639,12 +670,15 @@ ocurl-list api.http --json             # Output as JSON instead
   - `name`: Request identifier from `@name`
   - `method`: HTTP method
   - `path`: URL path with variables unresolved
-  - `query-params`: Query parameters (with defaults shown)
+  - `query-params`: Query parameters
+    * Key-value pairs, values may contain variables
   - `headers`: Request headers
   - `body`: Request body (if present)
-  - `dependencies`: All variables used (direct dependencies)
+    * Inline body as string
+    * External body file path
+  - `dependencies`: All variables used by this request
   - `produces`: Variables created by this request's lazy declarations
-  - `depends-on`: Requests that must execute before this one
+  - `variables`: Request-scoped variables with defaults
 
 **`--dependencies` Output**:
 ```lisp
